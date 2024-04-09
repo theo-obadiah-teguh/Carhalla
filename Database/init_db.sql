@@ -1,0 +1,1817 @@
+
+/* 
+- This is an SQL script to setup and populate the database for our project.
+- The first section is comprised of the DDL statements.
+- The second section is comprised of the corresponding insert statements.
+*/
+
+-- SECTION 1: SQL Data Definition Language
+CREATE DATABASE cpms_db;
+USE cpms_db;
+
+DROP TABLE IF EXISTS Occupy;
+DROP TABLE IF EXISTS Exits;
+DROP TABLE IF EXISTS ParkingSlot;
+/* DROP TABLE IF EXISTS TypeSlots; */
+DROP TABLE IF EXISTS ParkingZone;
+DROP TABLE IF EXISTS Tower;
+DROP TABLE IF EXISTS Staff;
+/* DROP TABLE IF EXISTS BranchCap; */
+DROP TABLE IF EXISTS BranchClient;
+DROP TABLE IF EXISTS Enters;
+DROP TABLE IF EXISTS Payment;
+DROP TABLE IF EXISTS Maintenance;
+DROP TABLE IF EXISTS HeavyDuty;
+DROP TABLE IF EXISTS PrivateCar;
+DROP TABLE IF EXISTS ExitGate;
+DROP TABLE IF EXISTS EntryGate;
+DROP TABLE IF EXISTS WeightRate;
+DROP TABLE IF EXISTS VehicleClass;
+
+-- SECTION 1: SQL Data Definition Language (DDL)
+
+-- VehicleClass Table (ISA Super Entity)
+-- Added NOT NULL to WeightClass to enforce total disjoint
+CREATE TABLE VehicleClass (
+    PlateNumber VARCHAR(10) NOT NULL,
+    WeightClass CHAR(1) NOT NULL,
+    PRIMARY KEY (PlateNumber)
+);
+
+-- WeightRate Table (Reference)
+CREATE TABLE WeightRate (
+    WeightClass CHAR(1) NOT NULL,
+    HourlyRate INT NOT NULL,
+    PRIMARY KEY (WeightClass)
+);
+
+-- EntryGate Table (Entity)
+CREATE TABLE EntryGate (
+    EntryGateID INT NOT NULL,
+    StatusIsActive INT NOT NULL,
+    PRIMARY KEY (EntryGateID)
+);
+
+-- ExitGate Table (Entity)
+CREATE TABLE ExitGate (
+    ExitGateID INT NOT NULL,
+    StatusIsActive INT NOT NULL,
+    PRIMARY KEY (ExitGateID)
+);
+
+-- PrivateCar Table (ISA Sub Entity)
+CREATE TABLE PrivateCar (
+    PlateNumber VARCHAR(10) NOT NULL,
+    Membership VARCHAR(12),
+    PRIMARY KEY (PlateNumber),
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber)
+);
+
+-- HeavyDuty Table (ISA Sub Entity)
+CREATE TABLE HeavyDuty (
+    PlateNumber VARCHAR(10) NOT NULL,
+    CompanyName VARCHAR(255),
+    PRIMARY KEY (PlateNumber),
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber)
+);
+
+-- Maintenance Table (ISA Sub Entity)
+CREATE TABLE Maintenance (
+    PlateNumber VARCHAR(10) NOT NULL,
+    WorkOrderID VARCHAR(12) NOT NULL, -- There must be a valid work order
+    PRIMARY KEY (PlateNumber, WorkOrderID),
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber)
+);
+
+-- Payment Table (Entity + Relationship)
+-- Added Payment amount
+-- Newly added assertion, makes sure that the payment amounts are zero or positive
+CREATE TABLE Payment (
+    PaymentID VARCHAR(255) NOT NULL,
+    Method VARCHAR(255) NOT NULL,
+    Amount FLOAT NOT NULL,
+    PlateNumber VARCHAR(10) NOT NULL,
+    ExitGateID INT NOT NULL,
+    PRIMARY KEY (PaymentID),
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber),
+    FOREIGN KEY (ExitGateID) REFERENCES ExitGate(ExitGateID),
+    CONSTRAINT PositiveAmount CHECK (Amount >= 0)
+);
+
+-- Enters Table (Relationship)
+-- Removed GateID as primary key, replaced it with time instead
+-- Total participation is enforced via backend implementation
+CREATE TABLE Enters (
+    DateTime DATETIME NOT NULL,
+    EntryGateID INT NOT NULL,
+    PlateNumber VARCHAR(10) NOT NULL,
+    PRIMARY KEY (DateTime, PlateNumber),
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber),
+    FOREIGN KEY (EntryGateID) REFERENCES EntryGate(EntryGateID) ON DELETE CASCADE
+);
+
+-- BranchClient Table
+
+/* 
+Assume the following specification for ClientTypes
+A: Shopping malls
+B: Apartment buildings
+C: Superblock with both commercial and residential zones
+*/
+
+CREATE TABLE BranchClient (
+    BranchID VARCHAR(12) NOT NULL,
+    ClientName VARCHAR(255) NOT NULL,
+    ClientType CHAR(1),
+    PRIMARY KEY (BranchID)
+);
+
+/*
+-- We decided to make this a view instead, in order not to duplicate data
+-- It's also not a frequently used functionality compared to other aspects of the application
+-- BranchCap Table
+CREATE TABLE BranchCap (
+    ClientType CHAR(1),
+    ParkingCap INT,
+    PRIMARY KEY (ClientType),
+    FOREIGN KEY (ClientType) REFERENCES BranchClient(ClientType)
+); */
+
+-- Staff Table (Entity)
+CREATE TABLE Staff (
+    EmployeeID INT UNIQUE NOT NULL,
+    FullName VARCHAR(255) NOT NULL,
+    Telephone CHAR(10) NOT NULL,
+    Email VARCHAR(255) UNIQUE NOT NULL,
+    Shift VARCHAR(255),
+    StartDate DATE,
+    BranchID VARCHAR(12) NOT NULL,
+    PRIMARY KEY (EmployeeID),
+    FOREIGN KEY (BranchID) REFERENCES BranchClient(BranchID) ON DELETE CASCADE
+);
+
+-- Tower Table (Entity + Relationship)
+/* Added new TowerID */
+CREATE TABLE Tower (
+    TowerID VARCHAR(8) NOT NULL,
+    Address VARCHAR(255) NOT NULL,
+    Zip CHAR(6) NOT NULL,
+    TowerTotalSlots INT NOT NULL,
+    -- RemainingSlots INT, Removed this, as it makes more sense to be a view
+    -- FilledSlots INT, This should be a view instead
+    BranchID VARCHAR(12) NOT NULL,
+    PRIMARY KEY (TowerID),
+    FOREIGN KEY (BranchID) REFERENCES BranchClient(BranchID) ON DELETE CASCADE
+);
+
+-- ParkingZone, i.e. Zone Table (Entity)
+-- Note: Type 1 is Private, Type 2 is Heavy, Type 3 is Maintenance, Type 4 is Mixed
+CREATE TABLE ParkingZone (
+    ParkingZoneID INT NOT NULL,
+    ParkingZoneType INT NOT NULL,
+    -- RemainingSlots INT, Removed this, as it makes more sense to be a view
+    -- FilledSlots INT, This should be a view instead
+    ZoneTotalSlots INT NOT NULL,
+    TowerID VARCHAR(8) NOT NULL,
+    PRIMARY KEY (ParkingZoneID), -- Removed ParkingZoneType from primary key
+    FOREIGN KEY (TowerID) REFERENCES Tower(TowerID) ON DELETE CASCADE
+);
+
+/*
+-- We decided to add this as an attribute ZoneTotalSlots in ParkingZone instead
+-- It actually saves data and it's less redundant
+-- TypeSlots Table (Not in ERD)
+CREATE TABLE TypeSlots (
+    ParkingZoneID INT,
+    TotalSlots INT,
+    PRIMARY KEY (ParkingZoneID),
+    FOREIGN KEY (ParkingZoneID) REFERENCES ParkingZone(ParkingZoneID) ON DELETE CASCADE
+); */
+
+-- ParkingSlot Table (Weak Entity Set, a.k.a ParkingSlotsComprises)
+CREATE TABLE ParkingSlot (
+    ParkingSlotID VARCHAR(8) NOT NULL,
+    ParkingZoneID INT NOT NULL,
+    PRIMARY KEY (ParkingSlotID, ParkingZoneID),
+    FOREIGN KEY (ParkingZoneID) REFERENCES ParkingZone(ParkingZoneID) ON DELETE CASCADE
+);
+
+-- Exits Table (Relationship)
+-- Removed GateID as primary key, replaced it with time instead
+-- Added ParkingZoneID and ParkingSlotID to preserve parking history
+CREATE TABLE Exits (
+    DateTime DATETIME,
+    ExitGateID INT NOT NULL,
+    PlateNumber VARCHAR(10) NOT NULL,
+    ParkingZoneID INT NOT NULL,
+    ParkingSlotID VARCHAR(8) NOT NULL,
+    PRIMARY KEY (DateTime, PlateNumber),
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber),
+    FOREIGN KEY (ParkingZoneID) REFERENCES ParkingZone(ParkingZoneID) ON DELETE CASCADE,
+    FOREIGN KEY (ParkingSlotID) REFERENCES ParkingSlot(ParkingSlotID) ON DELETE CASCADE,
+    FOREIGN KEY (ExitGateID) REFERENCES ExitGate(ExitGateID) ON DELETE CASCADE
+);
+
+-- Occupy Table (Relationship)
+CREATE TABLE Occupy (
+    ParkingSlotID VARCHAR(8) NOT NULL,
+    ParkingZoneID INT NOT NULL,
+    PlateNumber VARCHAR(10) NOT NULL,
+    PRIMARY KEY (ParkingSlotID, ParkingZoneID, PlateNumber),
+    FOREIGN KEY (ParkingSlotID) REFERENCES ParkingSlot(ParkingSlotID) ON DELETE CASCADE,
+    FOREIGN KEY (ParkingZoneID) REFERENCES ParkingZone(ParkingZoneID) ON DELETE CASCADE,
+    FOREIGN KEY (PlateNumber) REFERENCES VehicleClass(PlateNumber)
+);
+
+-- SECTION 2: Populating the Tables
+-- VehicleClass Table (45 Entries)
+-- A is for Private, B is for Heavy, C is for Maintenance
+INSERT INTO VehicleClass VALUES ('PLATE1234', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE2345', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE3456', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE4567', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE5678', 'A');
+
+-- New Values for A
+INSERT INTO VehicleClass VALUES ('PLATE4321', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE5432', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE6543', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE7654', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE8765', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE9876', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE0987', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE2435', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE3645', 'A');
+INSERT INTO VehicleClass VALUES ('PLATE7457', 'A');
+-- End of new values
+
+INSERT INTO VehicleClass VALUES ('PLATE6789', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE7890', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE8901', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE9012', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE0123', 'B');
+
+-- New Values for B
+INSERT INTO VehicleClass VALUES ('PLATE1199', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE2288', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE3377', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE4466', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE6644', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE7733', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE8822', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE9911', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE1919', 'B');
+INSERT INTO VehicleClass VALUES ('PLATE2828', 'B');
+-- End of new values
+
+INSERT INTO VehicleClass VALUES ('PLATE0500', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0600', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0700', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0800', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0900', 'C');
+
+-- New Values for C
+INSERT INTO VehicleClass VALUES ('PLATE0511', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0611', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0711', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0811', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0911', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0522', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0622', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0722', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0822', 'C');
+INSERT INTO VehicleClass VALUES ('PLATE0922', 'C');
+-- End of new values
+
+-- WeightRate Table
+INSERT INTO WeightRate VALUES ('A', 5);
+INSERT INTO WeightRate VALUES ('B', 10);
+INSERT INTO WeightRate VALUES ('C', 2); /* Cheap because the building calls maintenance */
+
+-- PrivateCar Table (15 Entries)
+INSERT INTO PrivateCar VALUES ('PLATE1234', 'p6725f');
+INSERT INTO PrivateCar VALUES ('PLATE2345', 't9123a');
+INSERT INTO PrivateCar VALUES ('PLATE3456', 'r1231b');
+INSERT INTO PrivateCar VALUES ('PLATE4567', 'm1023i');
+INSERT INTO PrivateCar VALUES ('PLATE5678', 'q1029y');
+INSERT INTO PrivateCar VALUES ('PLATE4321', NULL);
+INSERT INTO PrivateCar VALUES ('PLATE5432', NULL);
+INSERT INTO PrivateCar VALUES ('PLATE6543', NULL);
+INSERT INTO PrivateCar VALUES ('PLATE7654', NULL);
+INSERT INTO PrivateCar VALUES ('PLATE8765', NULL);
+INSERT INTO PrivateCar VALUES ('PLATE9876', 'x1273a');
+INSERT INTO PrivateCar VALUES ('PLATE0987', 'a1238b');
+INSERT INTO PrivateCar VALUES ('PLATE2435', 'j1923h');
+INSERT INTO PrivateCar VALUES ('PLATE3645', 'n9212p');
+INSERT INTO PrivateCar VALUES ('PLATE7457', 'k1920r');
+
+-- HeavyDuty Table (15 Entries)
+INSERT INTO HeavyDuty VALUES ('PLATE6789', 'Maersk Cargo'); -- Start of Exits
+INSERT INTO HeavyDuty VALUES ('PLATE7890', 'Yang Ming');
+INSERT INTO HeavyDuty VALUES ('PLATE8901', 'Atlantic Snow');
+INSERT INTO HeavyDuty VALUES ('PLATE9012', 'Pacific Beast');
+INSERT INTO HeavyDuty VALUES ('PLATE0123', 'Vladivostok Blue'); -- End of Exits
+INSERT INTO HeavyDuty VALUES ('PLATE1199', NULL);
+INSERT INTO HeavyDuty VALUES ('PLATE2288', NULL);
+INSERT INTO HeavyDuty VALUES ('PLATE3377', 'Selandia Baru');
+INSERT INTO HeavyDuty VALUES ('PLATE4466',  NULL);
+INSERT INTO HeavyDuty VALUES ('PLATE6644', 'Bajak Laut');
+INSERT INTO HeavyDuty VALUES ('PLATE7733', 'Yang Ming');
+INSERT INTO HeavyDuty VALUES ('PLATE8822', 'Maersk Cargo');
+INSERT INTO HeavyDuty VALUES ('PLATE9911', 'Ming Yang');
+INSERT INTO HeavyDuty VALUES ('PLATE1919', 'Atlantic Snow');
+INSERT INTO HeavyDuty VALUES ('PLATE2828', 'Vladivostok Blue');
+
+-- Maintenance Table (15 Entries)
+INSERT INTO Maintenance VALUES ('PLATE0500', 'WO1234'); -- Start of Exits
+INSERT INTO Maintenance VALUES ('PLATE0600', 'WO2345');
+INSERT INTO Maintenance VALUES ('PLATE0700', 'WO3456');
+INSERT INTO Maintenance VALUES ('PLATE0800', 'WO4567');
+INSERT INTO Maintenance VALUES ('PLATE0900', 'WO5678');
+INSERT INTO Maintenance VALUES ('PLATE0511', 'WO4321');
+INSERT INTO Maintenance VALUES ('PLATE0611', 'WO5432');
+INSERT INTO Maintenance VALUES ('PLATE0711', 'WO6543');
+INSERT INTO Maintenance VALUES ('PLATE0811', 'WO7654');
+INSERT INTO Maintenance VALUES ('PLATE0911', 'WO8756'); -- End of Exits
+INSERT INTO Maintenance VALUES ('PLATE0522', 'WO9786');
+INSERT INTO Maintenance VALUES ('PLATE0622', 'WO0978');
+INSERT INTO Maintenance VALUES ('PLATE0722', 'WO0123');
+INSERT INTO Maintenance VALUES ('PLATE0822', 'WO1324');
+INSERT INTO Maintenance VALUES ('PLATE0922', 'WO2435');
+
+-- EntryGate Table (15 Entries)
+INSERT INTO EntryGate VALUES (1, 1);
+INSERT INTO EntryGate VALUES (2, 1);
+INSERT INTO EntryGate VALUES (3, 1);
+INSERT INTO EntryGate VALUES (4, 1);
+INSERT INTO EntryGate VALUES (5, 1);
+INSERT INTO EntryGate VALUES (6, 1);
+INSERT INTO EntryGate VALUES (7, 1);
+INSERT INTO EntryGate VALUES (8, 0);
+INSERT INTO EntryGate VALUES (9, 1);
+INSERT INTO EntryGate VALUES (10, 1);
+INSERT INTO EntryGate VALUES (11, 1);
+INSERT INTO EntryGate VALUES (12, 0);
+INSERT INTO EntryGate VALUES (13, 1);
+INSERT INTO EntryGate VALUES (14, 0);
+INSERT INTO EntryGate VALUES (15, 1);
+
+-- ExitGate Table (15 Entries)
+INSERT INTO ExitGate VALUES (1, 1);
+INSERT INTO ExitGate VALUES (2, 1);
+INSERT INTO ExitGate VALUES (3, 1);
+INSERT INTO ExitGate VALUES (4, 1);
+INSERT INTO ExitGate VALUES (5, 1);
+INSERT INTO ExitGate VALUES (6, 1);
+INSERT INTO ExitGate VALUES (7, 0);
+INSERT INTO ExitGate VALUES (8, 1);
+INSERT INTO ExitGate VALUES (9, 1);
+INSERT INTO ExitGate VALUES (10, 1);
+INSERT INTO ExitGate VALUES (11, 1);
+INSERT INTO ExitGate VALUES (12, 0);
+INSERT INTO ExitGate VALUES (13, 0);
+INSERT INTO ExitGate VALUES (14, 0);
+INSERT INTO ExitGate VALUES (15, 1);
+
+
+-- Enters Table (45 Entries)
+INSERT INTO Enters VALUES ('2023-01-01 08:00:00', 1, 'PLATE1234'); -- Start of Exits
+INSERT INTO Enters VALUES ('2023-01-02 09:00:00', 1, 'PLATE2345');
+INSERT INTO Enters VALUES ('2023-01-03 10:00:00', 2, 'PLATE3456');
+INSERT INTO Enters VALUES ('2023-01-04 10:00:00', 3, 'PLATE4567');
+INSERT INTO Enters VALUES ('2023-01-05 10:00:00', 4, 'PLATE5678'); -- End of Exits
+
+-- New Values for A
+INSERT INTO Enters VALUES ('2023-01-01 08:01:00', 5, 'PLATE4321');
+INSERT INTO Enters VALUES ('2023-01-01 08:02:00', 6, 'PLATE5432');
+INSERT INTO Enters VALUES ('2023-01-01 08:03:00', 7, 'PLATE6543');
+INSERT INTO Enters VALUES ('2023-01-01 08:04:00', 7, 'PLATE7654');
+INSERT INTO Enters VALUES ('2023-01-05 08:05:00', 5, 'PLATE8765');
+INSERT INTO Enters VALUES ('2023-01-05 08:06:00', 9, 'PLATE9876');
+INSERT INTO Enters VALUES ('2023-01-05 09:01:00', 10, 'PLATE0987');
+INSERT INTO Enters VALUES ('2023-01-05 09:02:00', 1, 'PLATE2435');
+INSERT INTO Enters VALUES ('2023-01-04 09:03:00', 2, 'PLATE3645');
+INSERT INTO Enters VALUES ('2023-01-04 09:04:00', 2, 'PLATE7457');
+-- End of new values
+
+INSERT INTO Enters VALUES ('2023-01-02 11:01:00', 11, 'PLATE6789'); -- Start of Exits
+INSERT INTO Enters VALUES ('2023-01-02 11:02:00', 11, 'PLATE7890');
+INSERT INTO Enters VALUES ('2023-01-02 11:03:00', 11, 'PLATE8901');
+INSERT INTO Enters VALUES ('2023-01-02 11:04:00', 11, 'PLATE9012');
+INSERT INTO Enters VALUES ('2023-01-02 11:05:00', 11, 'PLATE0123'); -- End of Exits
+
+-- New Values for B
+INSERT INTO Enters VALUES ('2023-01-02 07:00:00', 13, 'PLATE1199');
+INSERT INTO Enters VALUES ('2023-01-02 07:01:00', 15, 'PLATE2288');
+INSERT INTO Enters VALUES ('2023-01-02 07:02:00', 13, 'PLATE3377');
+INSERT INTO Enters VALUES ('2023-01-02 07:03:00', 15, 'PLATE4466');
+INSERT INTO Enters VALUES ('2023-01-03 07:04:00', 13, 'PLATE6644');
+INSERT INTO Enters VALUES ('2023-01-03 07:05:00', 11, 'PLATE7733');
+INSERT INTO Enters VALUES ('2023-01-03 07:06:00', 10, 'PLATE8822');
+INSERT INTO Enters VALUES ('2023-01-01 07:07:00', 9, 'PLATE9911');
+INSERT INTO Enters VALUES ('2023-01-01 07:08:00', 10, 'PLATE1919');
+INSERT INTO Enters VALUES ('2023-01-01 07:09:00', 11, 'PLATE2828');
+-- End of new values
+
+INSERT INTO Enters VALUES ('2023-01-06 08:40:20', 1,'PLATE0500'); -- Start of Exits
+INSERT INTO Enters VALUES ('2023-01-06 08:00:10', 2,'PLATE0600');
+INSERT INTO Enters VALUES ('2023-01-06 08:20:30', 3,'PLATE0700');
+INSERT INTO Enters VALUES ('2023-01-06 08:00:40', 4,'PLATE0800');
+INSERT INTO Enters VALUES ('2023-01-06 08:01:51', 5,'PLATE0900');
+
+-- New ValueEnters
+INSERT INTO Enters VALUES ('2023-01-01 08:30:00', 1, 'PLATE0511');
+INSERT INTO Enters VALUES ('2023-01-02 08:42:00', 1, 'PLATE0611');
+INSERT INTO Enters VALUES ('2023-01-03 08:53:00', 2, 'PLATE0711');
+INSERT INTO Enters VALUES ('2023-01-04 08:49:00', 5, 'PLATE0811');
+INSERT INTO Enters VALUES ('2023-01-05 08:02:00', 6, 'PLATE0911'); -- End of Exits
+INSERT INTO Enters VALUES ('2023-01-05 08:03:00', 7, 'PLATE0522');
+INSERT INTO Enters VALUES ('2023-01-06 08:13:00', 8, 'PLATE0622');
+INSERT INTO Enters VALUES ('2023-01-06 08:17:00', 5, 'PLATE0722');
+INSERT INTO Enters VALUES ('2023-01-01 08:02:33', 3, 'PLATE0822');
+INSERT INTO Enters VALUES ('2023-01-01 08:03:47', 2, 'PLATE0922');
+
+-- BranchClient Table
+INSERT INTO BranchClient VALUES ('BR001', 'Pantai Indah Kapuk', 'C');
+INSERT INTO BranchClient VALUES ('BR002', 'Podomoro Land', 'C');
+INSERT INTO BranchClient VALUES ('BR003', 'Carveira Heights', 'B');
+INSERT INTO BranchClient VALUES ('BR004', 'TD Tower', 'A');
+INSERT INTO BranchClient VALUES ('BR005', 'Metropolis at Metrotown', 'A');
+
+-- Tower Table (15 Entries)
+INSERT INTO Tower VALUES ('100', '123 Main St', 'A1B2C3', 61, 'BR001');
+INSERT INTO Tower VALUES ('200', '456 Oak Rd', 'D4E5F6', 66, 'BR002');
+INSERT INTO Tower VALUES ('300', '456 Oak Rd', 'G7H8I9', 38, 'BR003');
+INSERT INTO Tower VALUES ('400', '101 River Ln', 'J1K2L3', 55, 'BR004');
+INSERT INTO Tower VALUES ('500', '202 Lake St', 'M4N5O6', 48, 'BR005');
+
+-- Added some new towers
+INSERT INTO Tower VALUES ('101', '124 Main St', 'A1B2C3', 100, 'BR001');
+INSERT INTO Tower VALUES ('201', '457 Oak Rd', 'D4E5F6', 130, 'BR002');
+INSERT INTO Tower VALUES ('301', '459 Oak Rd', 'G7H8I9', 90, 'BR003');
+INSERT INTO Tower VALUES ('401', '103 River Ln', 'J1K2L3', 170, 'BR004');
+INSERT INTO Tower VALUES ('501', '204 Lake St', 'M4N5O6', 65, 'BR005');
+
+INSERT INTO Tower VALUES ('102', '125 Main St', 'A1B2C3', 60, 'BR001');
+INSERT INTO Tower VALUES ('202', '458 Oak Rd', 'D4E5F6', 65, 'BR002');
+INSERT INTO Tower VALUES ('302', '460 Oak Rd', 'G7H8I9', 70, 'BR003');
+INSERT INTO Tower VALUES ('402', '105 River Ln', 'J1K2L3', 25, 'BR004');
+INSERT INTO Tower VALUES ('502', '205 Lake St', 'M4N5O6', 100, 'BR005');
+
+-- ParkingZone Table (32 Entries)
+INSERT INTO ParkingZone VALUES (15, 1, 30, '100');
+INSERT INTO ParkingZone VALUES (58, 4, 31, '100');
+INSERT INTO ParkingZone VALUES (27, 1, 25, '200');
+INSERT INTO ParkingZone VALUES (51, 4, 41, '200');
+INSERT INTO ParkingZone VALUES (32, 2, 21, '300');
+INSERT INTO ParkingZone VALUES (43, 3, 17, '300');
+INSERT INTO ParkingZone VALUES (18, 1, 32, '400');
+INSERT INTO ParkingZone VALUES (29, 1, 23, '400');
+INSERT INTO ParkingZone VALUES (25, 2, 21, '500');
+INSERT INTO ParkingZone VALUES (45, 3, 27, '500');
+
+-- Added new parking zones
+INSERT INTO ParkingZone VALUES (100, 3, 30, '101');
+INSERT INTO ParkingZone VALUES (101, 4, 40, '101');
+INSERT INTO ParkingZone VALUES (102, 2, 30, '101');
+INSERT INTO ParkingZone VALUES (103, 4, 45, '201');
+INSERT INTO ParkingZone VALUES (104, 1, 85, '201');
+INSERT INTO ParkingZone VALUES (105, 3, 45, '301');
+INSERT INTO ParkingZone VALUES (106, 3, 45, '301');
+INSERT INTO ParkingZone VALUES (107, 4, 55, '401');
+INSERT INTO ParkingZone VALUES (108, 1, 55, '401');
+INSERT INTO ParkingZone VALUES (109, 2, 60, '401');
+INSERT INTO ParkingZone VALUES (110, 3, 65, '501');
+
+INSERT INTO ParkingZone VALUES (70, 3, 30, '102');
+INSERT INTO ParkingZone VALUES (71, 4, 30, '102');
+INSERT INTO ParkingZone VALUES (72, 2, 25, '202');
+INSERT INTO ParkingZone VALUES (73, 4, 40, '202');
+INSERT INTO ParkingZone VALUES (74, 2, 20, '302');
+INSERT INTO ParkingZone VALUES (75, 3, 20, '302');
+INSERT INTO ParkingZone VALUES (76, 2, 30, '302');
+INSERT INTO ParkingZone VALUES (77, 2, 25, '402');
+INSERT INTO ParkingZone VALUES (78, 2, 20, '502');
+INSERT INTO ParkingZone VALUES (79, 2, 25, '502');
+INSERT INTO ParkingZone VALUES (80, 3, 55, '502');
+
+/*
+-- TODO: TypeSlots Table THIS DOESNT MAKE SENSE
+INSERT INTO TypeSlots VALUES (15, 50);
+INSERT INTO TypeSlots VALUES (58, 50);
+INSERT INTO TypeSlots VALUES (27, 50);
+INSERT INTO TypeSlots VALUES (51, 50);
+INSERT INTO TypeSlots VALUES (32, 50);
+*/
+
+-- ParkingSlot Table (1143 Entries)
+INSERT INTO ParkingSlot VALUES ('SLOT01', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 15);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 15);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 58);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 58);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 27);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 27);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 51);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 51);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 32);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 32);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 43);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 43);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 18);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 18);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 29);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 29);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 25);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 25);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 45);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 45);
+
+-- New parking slot data
+INSERT INTO ParkingSlot VALUES ('SLOT01', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 100);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 100);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 101);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 101);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 102);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 102);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 103);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 103);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT46', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT47', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT48', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT49', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT50', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT51', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT52', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT53', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT54', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT55', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT56', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT57', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT58', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT59', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT60', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT61', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT62', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT63', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT64', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT65', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT66', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT67', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT68', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT69', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT70', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT71', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT72', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT73', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT74', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT75', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT76', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT77', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT78', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT79', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT80', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT81', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT82', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT83', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT84', 104);
+INSERT INTO ParkingSlot VALUES ('SLOT85', 104);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 105);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 105);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 106);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 106);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT46', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT47', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT48', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT49', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT50', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT51', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT52', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT53', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT54', 107);
+INSERT INTO ParkingSlot VALUES ('SLOT55', 107);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT46', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT47', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT48', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT49', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT50', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT51', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT52', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT53', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT54', 108);
+INSERT INTO ParkingSlot VALUES ('SLOT55', 108);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT46', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT47', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT48', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT49', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT50', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT51', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT52', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT53', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT54', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT55', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT56', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT57', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT58', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT59', 109);
+INSERT INTO ParkingSlot VALUES ('SLOT60', 109);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT46', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT47', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT48', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT49', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT50', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT51', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT52', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT53', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT54', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT55', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT56', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT57', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT58', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT59', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT60', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT61', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT62', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT63', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT64', 110);
+INSERT INTO ParkingSlot VALUES ('SLOT65', 110);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 70);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 70);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 71);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 71);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 72);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 72);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 73);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 73);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 74);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 74);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 75);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 75);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 76);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 76);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 77);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 77);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 78);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 78);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 79);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 79);
+
+INSERT INTO ParkingSlot VALUES ('SLOT01', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT02', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT03', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT04', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT05', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT06', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT07', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT08', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT09', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT10', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT11', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT12', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT13', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT14', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT15', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT16', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT17', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT18', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT19', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT20', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT21', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT22', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT23', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT24', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT25', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT26', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT27', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT28', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT29', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT30', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT31', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT32', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT33', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT34', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT35', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT36', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT37', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT38', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT39', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT40', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT41', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT42', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT43', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT44', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT45', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT46', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT47', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT48', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT49', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT50', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT51', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT52', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT53', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT54', 80);
+INSERT INTO ParkingSlot VALUES ('SLOT55', 80);
+
+-- Exits Table (20 Entries)
+INSERT INTO Exits VALUES ('2023-01-01 18:00:00', 1, 'PLATE1234', 51, 'SLOT10');
+INSERT INTO Exits VALUES ('2023-01-02 19:00:00', 2, 'PLATE2345', 27, 'SLOT11');
+INSERT INTO Exits VALUES ('2023-01-03 20:00:00', 3, 'PLATE3456', 25, 'SLOT12');
+INSERT INTO Exits VALUES ('2023-01-04 21:00:00', 4, 'PLATE4567', 29, 'SLOT13');
+INSERT INTO Exits VALUES ('2023-01-05 22:00:00', 5, 'PLATE5678', 45, 'SLOT14');
+
+-- New exit entries based on payments
+INSERT INTO Exits VALUES ('2023-01-02 13:01:00', 2, 'PLATE6789', 51, 'SLOT07');
+INSERT INTO Exits VALUES ('2023-01-02 14:02:00', 5, 'PLATE7890', 45, 'SLOT02');
+INSERT INTO Exits VALUES ('2023-01-02 15:03:00', 1, 'PLATE8901', 32, 'SLOT10');
+INSERT INTO Exits VALUES ('2023-01-02 16:04:00', 4, 'PLATE9012', 29, 'SLOT03');
+INSERT INTO Exits VALUES ('2023-01-02 17:05:00', 4, 'PLATE0123', 29, 'SLOT09');
+
+INSERT INTO Exits VALUES ('2023-01-06 11:40:20', 4, 'PLATE0500', 29, 'SLOT04');
+INSERT INTO Exits VALUES ('2023-01-06 20:00:10', 3, 'PLATE0600', 27, 'SLOT04');
+INSERT INTO Exits VALUES ('2023-01-06 20:20:30', 3, 'PLATE0700', 27, 'SLOT08');
+INSERT INTO Exits VALUES ('2023-01-06 10:00:40', 3, 'PLATE0800', 27, 'SLOT08');
+INSERT INTO Exits VALUES ('2023-01-06 09:01:51', 5, 'PLATE0900', 25, 'SLOT11');
+INSERT INTO Exits VALUES ('2023-01-01 19:30:00', 2, 'PLATE0511', 18, 'SLOT05');
+INSERT INTO Exits VALUES ('2023-01-02 09:42:00', 2, 'PLATE0611', 18, 'SLOT01');
+INSERT INTO Exits VALUES ('2023-01-03 22:53:00', 5, 'PLATE0711', 18, 'SLOT01');
+INSERT INTO Exits VALUES ('2023-01-04 22:49:00', 5, 'PLATE0811', 15, 'SLOT02');
+INSERT INTO Exits VALUES ('2023-01-05 12:02:00', 5, 'PLATE0911', 15, 'SLOT15');
+
+-- Updated Occupy to be inline with backend design
+-- Occupy Table (25 Entries)
+INSERT INTO Occupy VALUES ('SLOT01', 100, 'PLATE4321');
+INSERT INTO Occupy VALUES ('SLOT02', 100, 'PLATE5432');
+INSERT INTO Occupy VALUES ('SLOT03', 100, 'PLATE6543');
+INSERT INTO Occupy VALUES ('SLOT04', 100, 'PLATE7654');
+INSERT INTO Occupy VALUES ('SLOT05', 100, 'PLATE8765');
+INSERT INTO Occupy VALUES ('SLOT06', 100, 'PLATE9876');
+INSERT INTO Occupy VALUES ('SLOT07', 100, 'PLATE0987');
+INSERT INTO Occupy VALUES ('SLOT08', 101, 'PLATE2435');
+INSERT INTO Occupy VALUES ('SLOT09', 101, 'PLATE3645');
+INSERT INTO Occupy VALUES ('SLOT10', 101, 'PLATE7457');
+INSERT INTO Occupy VALUES ('SLOT11', 101, 'PLATE1199');
+INSERT INTO Occupy VALUES ('SLOT12', 101, 'PLATE2288');
+INSERT INTO Occupy VALUES ('SLOT13', 101, 'PLATE3377');
+INSERT INTO Occupy VALUES ('SLOT14', 101, 'PLATE4466');
+INSERT INTO Occupy VALUES ('SLOT15', 101, 'PLATE6644');
+INSERT INTO Occupy VALUES ('SLOT16', 101, 'PLATE7733');
+INSERT INTO Occupy VALUES ('SLOT17', 102, 'PLATE8822');
+INSERT INTO Occupy VALUES ('SLOT18', 102, 'PLATE9911');
+INSERT INTO Occupy VALUES ('SLOT19', 102, 'PLATE1919');
+INSERT INTO Occupy VALUES ('SLOT11', 102, 'PLATE2828');
+INSERT INTO Occupy VALUES ('SLOT12', 102, 'PLATE0522');
+INSERT INTO Occupy VALUES ('SLOT13', 102, 'PLATE0622');
+INSERT INTO Occupy VALUES ('SLOT14', 102, 'PLATE0722');
+INSERT INTO Occupy VALUES ('SLOT15', 102, 'PLATE0822');
+INSERT INTO Occupy VALUES ('SLOT16', 102, 'PLATE0922');
+
+-- Adjusted payment methods to just three categories
+-- Payment Table (20 Entries)
+INSERT INTO Payment VALUES (UUID(), 'Credit Card', 50, 'PLATE1234', 1); -- 5 per hour
+INSERT INTO Payment VALUES (UUID(), 'Credit Card', 50, 'PLATE2345', 2);
+INSERT INTO Payment VALUES (UUID(), 'Cash', 50,  'PLATE3456', 3);
+INSERT INTO Payment VALUES (UUID(), 'Cash', 55, 'PLATE4567', 4);
+INSERT INTO Payment VALUES (UUID(), 'Cash', 60, 'PLATE5678', 5);
+
+-- New payment
+INSERT INTO Payment VALUES (UUID(), 'Cash', 6, 'PLATE0500', 1); -- 2 per hour
+INSERT INTO Payment VALUES (UUID(), 'Cash', 24, 'PLATE0600', 2);
+INSERT INTO Payment VALUES (UUID(), 'Cash', 24, 'PLATE0700', 1);
+INSERT INTO Payment VALUES (UUID(), 'Credit Card', 4, 'PLATE0800', 2);
+INSERT INTO Payment VALUES (UUID(), 'Credit Card', 2, 'PLATE0900', 1);
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 22, 'PLATE0511', 2);
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 1, 'PLATE0611', 1);
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 28, 'PLATE0711', 2);
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 28, 'PLATE0811', 1);
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 8, 'PLATE0911', 2);
+
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 20, 'PLATE6789', 1); -- 10 per hour
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 30, 'PLATE7890', 2);
+INSERT INTO Payment VALUES (UUID(), 'Debit Card', 40, 'PLATE8901', 1);
+INSERT INTO Payment VALUES (UUID(), 'Cash', 50, 'PLATE9012', 2);
+INSERT INTO Payment VALUES (UUID(), 'Cash', 60, 'PLATE0123', 1);
+
+/*
+-- We decided to make this a view instead, in order not to duplicate data
+-- BranchCap
+INSERT INTO BranchCap (ClientType, ParkingCap) VALUES ('A', 100);
+INSERT INTO BranchCap (ClientType, ParkingCap) VALUES ('B', 200);
+INSERT INTO BranchCap (ClientType, ParkingCap) VALUES ('C', 300);
+INSERT INTO BranchCap (ClientType, ParkingCap) VALUES ('D', 400);
+INSERT INTO BranchCap (ClientType, ParkingCap) VALUES ('E', 500);
+*/
+
+-- Staff Table
+INSERT INTO Staff VALUES (1, 'John Doe', '1234567890', 'jdoe@example.com', 'Morning',
+'2023-01-01', 'BR001');
+INSERT INTO Staff VALUES (2, 'John Dowell', '1111111111', 'jdow@example.com', 'Morning',
+'2023-01-02', 'BR001');
+INSERT INTO Staff VALUES (3, 'John Dupont', '2222222222', 'jdop@example.com', 'Evening',
+'2022-01-01', 'BR001');
+INSERT INTO Staff VALUES (4, 'John Do', '3333333333', 'jdo@example.com', 'Evening',
+'2021-03-01', 'BR001');
+INSERT INTO Staff VALUES (5, 'John Do Not', '4444444444', 'jdon@example.com', 'Night',
+'2023-01-01', 'BR001');
+
+INSERT INTO Staff VALUES (6, 'Jane Smith', '5555555555', 'jsmith@example.com', 'Morning',
+'2023-02-01', 'BR002');
+INSERT INTO Staff VALUES (7, 'Jane Williams', '6666666666', 'jwill@example.com', 'Morning',
+'2023-02-02', 'BR002');
+INSERT INTO Staff VALUES (8, 'Jane Anderson', '7777777777', 'jander@example.com', 'Evening',
+'2023-04-01', 'BR002');
+INSERT INTO Staff VALUES (9, 'Jane Valeria', '8888888888', 'jvaler@example.com', 'Night',
+'2023-02-01', 'BR002');
+
+INSERT INTO Staff VALUES (10, 'Mike Brown', '9999999999', 'mbrown@example.com', 'Morning',
+'2022-03-01', 'BR003');
+INSERT INTO Staff VALUES (11, 'Mike Grey', '2345678901', 'mgrey@example.com', 'Morning',
+'2020-03-01', 'BR003');
+INSERT INTO Staff VALUES (12, 'Mike White', '3456789012', 'mwhite@example.com', 'Evening',
+'2023-02-01', 'BR003');
+INSERT INTO Staff VALUES (13, 'Mike Yellow', '4567890123', 'myellow@example.com', 'Evening',
+'2023-04-01', 'BR003');
+INSERT INTO Staff VALUES (14, 'Mike Anderson', '5678901234', 'mander@example.com', 'Evening',
+'2023-03-01', 'BR003');
+INSERT INTO Staff VALUES (15, 'Mike Williams', '6789012345', 'mwill@example.com', 'Night',
+'2023-01-01', 'BR003');
+INSERT INTO Staff VALUES (16, 'Mike James', '7890123456', 'mj@example.com', 'Night',
+'2023-03-02', 'BR003');
+
+INSERT INTO Staff VALUES (17, 'Sara White', '8901234567', 'swhite@example.com', 'Morning',
+'2023-04-02', 'BR004');
+INSERT INTO Staff VALUES (18, 'Sara Brown', '9012345678', 'sbrown@example.com', 'Evening',
+'2023-04-01', 'BR004');
+
+INSERT INTO Staff VALUES (19, 'Alex Green', '1111122222', 'agreen@example.com', 'Morning',
+'2023-05-01', 'BR005');
+INSERT INTO Staff VALUES (20, 'Alex Blue', '2222233333', 'ablue@example.com', 'Evening',
+'2023-04-01', 'BR005');

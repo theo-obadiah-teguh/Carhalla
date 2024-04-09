@@ -1,0 +1,25 @@
+.introNavbar {
+    background-color: #89CFF0;
+  }
+
+#basic-nav-dropdown {
+    color: white !important;
+}
+
+.custom-dropdown .dropdown-toggle::after {
+    content: none; /* Remove the default arrow */
+}
+
+.custom-dropdown .dropdown-toggle svg {
+    font-size: 24px;
+}
+
+.list-icon-home {
+    color: white; /* Set the icon color to white */
+}
+
+.menu-icon-link {
+    text-decoration: none;
+    color: inherit;
+    transition: color 0.3s;
+}

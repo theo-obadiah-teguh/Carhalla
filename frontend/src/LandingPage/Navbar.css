@@ -1,0 +1,14 @@
+.introNavbar {
+    background-color: #89CFF0;
+  }
+
+.btn {
+  background-color:#4682B4;
+  color: white;
+  border-color: #4682B4;
+}
+
+.btn:hover {
+  background-color: #1F51FF;
+  border-color: #1F51FF;
+}
