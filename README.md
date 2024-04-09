@@ -6,15 +6,17 @@ A copy of the repository for CPSC 304: Introduction to Relational Databases by t
 
 ## Group Members and Student Numbers
 
+- (49330046) Adeeb Khan
 - (13046024) Dwayne Dmello
 - (67719955) Theo Obadiah Teguh
-- (49330046) Adeeb Khan
 
 ---
 
 ## General Description
 
 This project involves the development of a database system tailored for multi-level car parks. This application is designed to streamline the management of parking facilities, providing a solution for overseeing operations, assessing profitability, and analyzing car distribution within a network of parking lots. The primary goal is to enhance efficiency and user experience in parking lots while addressing common challenges such as finding parking spaces in crowded areas, locating parked cars, and planning ahead for reservations.
+
+Adeeb was in charge of full-stack development, Dwayne administered the database on AWS Cloud, and Theo took responisbility for database design, SQL statements, and automation.
 
 ---
 
