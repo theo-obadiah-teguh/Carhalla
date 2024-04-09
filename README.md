@@ -16,7 +16,7 @@ A copy of the repository for CPSC 304: Introduction to Relational Databases by t
 
 This project involves the development of a database system tailored for multi-level car parks. This application is designed to streamline the management of parking facilities, providing a solution for overseeing operations, assessing profitability, and analyzing car distribution within a network of parking lots. The primary goal is to enhance efficiency and user experience in parking lots while addressing common challenges such as finding parking spaces in crowded areas, locating parked cars, and planning ahead for reservations.
 
-Adeeb was in charge of full-stack development, Dwayne administered the database on AWS Cloud and assisted in the creation of SQL queries. Theo took responsibility for database design, SQL Data Definition Language along with other queries, and process automation.
+Adeeb was in charge of full-stack development, Dwayne administered the database on AWS Cloud and assisted in the creation of SQL queries. Theo took responsibility for database design, SQL Data Definition Language along with other queries, and process automation. The contents listed here were copied from the original repository administered under the official University of British Columbia GitHub enterprise account.
 
 ---
 
