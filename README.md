@@ -1,6 +1,6 @@
 # Carhalla: A Car Parking Management System
 
-A repository for CPSC 304: Introduction to Relational Databases by the University of British Columbia. Our objective was design a database with an interactive GUI application.
+A copy of the repository for CPSC 304: Introduction to Relational Databases by the University of British Columbia. Our objective was design a database with an interactive GUI application.
 
 ---
 
