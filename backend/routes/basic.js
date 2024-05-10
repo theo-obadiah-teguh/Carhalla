@@ -1,9 +1,12 @@
-require('dotenv').config();
+// Load environment variables
+const dotenv = require('dotenv');
+dotenv.config({ path: '../.env' });
+
 const mysql = require("mysql");
 const express = require('express'); 
-
 const router = express.Router();
 
+// Create connection to AWS RDS MySQL
 const db = mysql.createConnection({
     host: process.env.RDS_HOST,
     port: "3306",
