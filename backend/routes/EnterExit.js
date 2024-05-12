@@ -1,14 +1,18 @@
+const dotenv = require('dotenv');
+dotenv.config({ path: '../.env' });
+
 const mysql = require("mysql");
 const express = require('express'); 
 
 const router = express.Router();
 
+// Create connection to AWS RDS MySQL
 const db = mysql.createConnection({
-    host: "database-1.cfygwy4i0v9o.us-east-2.rds.amazonaws.com",
+    host: process.env.RDS_HOST,
     port: "3306",
-    user: "admin",
-    password: "password",
-    database: "cpms_db",
+    user: process.env.RDS_USER,
+    password: process.env.RDS_PASS,
+    database: process.env.RDS_DB,
 })
 
 db.connect((err) => {
