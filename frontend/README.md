@@ -1,1 +1,3 @@
-# Here Belongs the Front end of the project built using React
+# Project Frontend
+
+This directory contains the source code for our project's frontend, based in React.
