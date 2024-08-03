@@ -32,5 +32,5 @@ Our database can explained with the following Entity Relationship Diagram. Pleas
 
 The following resources were useful in preparing and deploying the web application.
 - [Setting up your own domain with Route 53](https://www.youtube.com/watch?v=jDz4j_kkyLA).
-- [Setting up an EC2 instance to host a website and connecting it with your domain](https://dev.to/oayanda/static-website-setup-on-amazon-cloud-using-cloudfront-s3-route53-acm-for-ssl-44ij).
+- [Setting up an EC2 instance to host a NodeJS app and connecting it with your domain](https://www.youtube.com/watch?v=nQdyiK7-VlQ).
 - [Connect to MySQL on AWS RDS using NodeJS](https://www.youtube.com/watch?v=6Nt-Jl3CzxE&t=3s).
