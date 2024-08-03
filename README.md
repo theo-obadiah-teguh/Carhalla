@@ -28,19 +28,9 @@ Our database can explained with the following Entity Relationship Diagram. Pleas
 
 ---
 
-## Project Timeline
+## Deployment
 
-- 16th March: Plan out exact functionality and rough frontend design.
-- 17th March: Start programming frontend with React.js, start designing database queries.
-- 23rd March: Have frontend ready, have the database set up and hosted, with queries for all functionalities ready. Crosscheck work to ensure compatibility.
-- 24th March: Start developing the Express.js API to link the frontend and backend.
-- 31st March: Finish developing API. Have all endpoints tested in postman and well commented for use in frontend. Start calling API from frontend and completing the linking.
-- 2nd April: Finish linking the frontend and backend, iron out any last minute bugs or discrepancies.
-- 3rd April to 5th April: Ask for feedback in office hours and from TA to improve project and make final changes.
-- 5th April: Submit project by 6pm or sooner.
-
-
-## Change Log
-
-- Added TowerID as primary key for Towers and removed Address and Zip as Primary Keys.
-
+The following resources were useful in preparing and deploying the web application.
+- [Setting up your own domain with Route 53](https://www.youtube.com/watch?v=jDz4j_kkyLA).
+- [Setting up an EC2 instance to host a website and connecting it with your domain](https://dev.to/oayanda/static-website-setup-on-amazon-cloud-using-cloudfront-s3-route53-acm-for-ssl-44ij).
+- [Connect to MySQL on AWS RDS using NodeJS](https://www.youtube.com/watch?v=6Nt-Jl3CzxE&t=3s).
